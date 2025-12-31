@@ -1,57 +1,33 @@
 import streamlit as st
+from streamlit_gsheets import GSheetsConnection
 import pandas as pd
-from datetime import datetime, timedelta
 
-st.set_page_config(page_title="Agriland - Gestion", layout="wide", page_icon="🥔")
+st.set_page_config(page_title="Agriland Cloud", layout="wide")
 
-# --- INITIALISATION DE LA MÉMOIRE ---
-if 'depenses' not in st.session_state:
-    st.session_state.depenses = []
+st.title("🚜 Agriland Sénégal - Synchronisation Cloud")
 
-st.title("🥔 Agriland Sénégal - Spécial Pomme de Terre")
-st.info("📍 Darou Khoudoss, Andal | Campagne : 5 Hectares")
+# Connexion réelle au Google Sheet
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- BARRE LATÉRALE : PARAMÈTRES & SAISIE ---
+# Lecture des données existantes
+df = conn.read(ttl="10m") # Garde les données en mémoire 10 min
+
 with st.sidebar:
-    st.header("⚙️ Paramètres")
-    date_semis = st.date_input("Date du semis", datetime(2025, 12, 19))
-    prix_sac = st.number_input("Prix du sac (25kg) prévu (FCFA)", min_value=0, value=6000)
-    
-    st.divider()
-    st.header("💸 Noter une dépense")
-    motif = st.text_input("Motif (ex: Semences, Urée, Main d'oeuvre)")
-    montant = st.number_input("Montant (FCFA)", min_value=0)
-    if st.button("Enregistrer la dépense"):
-        st.session_state.depenses.append({"Motif": motif, "Montant": montant, "Date": datetime.now().strftime("%d/%m/%Y")})
-        st.success("Dépense ajoutée !")
+    st.header("🌿 Ajouter une Culture")
+    with st.form("form_agriland"):
+        type_c = st.selectbox("Type", ["Arboriculture", "Maraîchage", "Élevage"])
+        nom_c = st.text_input("Nom de la culture/espèce")
+        surf = st.number_input("Grandeur (Ha ou Têtes)", min_value=0.0)
+        submit = st.form_submit_button("Sauvegarder à Andal")
 
-# --- CALCULS ---
-jours_passes = (datetime.now().date() - date_semis).days
-recolte_totale_kg = 5 * 25 * 1000 # 5ha * 25 tonnes
-nb_sacs = recolte_totale_kg / 25
-chiffre_affaire = nb_sacs * prix_sac
-total_depenses_reelles = sum(item['Montant'] for item in st.session_state.depenses)
-benefice_reel = chiffre_affaire - total_depenses_reelles
+        if submit:
+            # Création de la nouvelle ligne
+            new_data = pd.DataFrame([{"Type": type_c, "Nom": nom_c, "Valeur": surf}])
+            # Fusion avec l'ancien tableau
+            updated_df = pd.concat([df, new_data], ignore_index=True)
+            # Mise à jour du Google Sheet
+            conn.update(spreadsheet=st.secrets["connections"]["gsheets"]["spreadsheet"], data=updated_df)
+            st.success("Données envoyées sur Google Sheets !")
 
-# --- DASHBOARD ---
-col1, col2, col3 = st.columns(3)
-col1.metric("Âge de la culture", f"{jours_passes} jours")
-col2.metric("Récolte estimée", f"{recolte_totale_kg:,} kg".replace(',', ' '))
-col3.metric("Total Dépenses", f"{total_depenses_reelles:,} FCFA".replace(',', ' '))
-
-st.divider()
-
-# --- RENTABILITÉ RÉELLE ---
-st.subheader("💰 Suivi Financier Précis")
-c1, c2 = st.columns(2)
-with c1:
-    st.write(f"**Chiffre d'Affaire prévu :** {chiffre_affaire:,.0f} FCFA".replace(',', ' '))
-    st.metric("Bénéfice Net Actuel", f"{benefice_reel:,.0f} FCFA".replace(',', ' '))
-with c2:
-    if st.session_state.depenses:
-        st.write("**Détails des derniers frais :**")
-        st.table(pd.DataFrame(st.session_state.depenses).tail(5))
-
-# --- CALENDRIER NIAYES ---
-st.subheader("📅 État de croissance")
-st.progress(min(max(jours_passes / 120, 0.0), 1.0))
+st.header("📊 État actuel de la Ferme")
+st.dataframe(df, use_container_width=True)
