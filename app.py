@@ -8,58 +8,76 @@ st.set_page_config(page_title="Agriland Business", layout="wide", page_icon="�
 # --- CONNEXION CLOUD ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
+# Lecture des données (Onglet "Campagnes")
 try:
     df = conn.read(worksheet="Campagnes")
-except Exception:
+except:
+    # Création d'une structure vide si le fichier est neuf
     df = pd.DataFrame(columns=["ID", "Type", "Culture", "Surface", "Date_Debut", "Statut", "Depenses", "Recettes", "Resultat"])
 
-st.title("💰 Agriland Sénégal : Suivi des Profits")
+st.title("💰 Agriland Sénégal : Pilotage Financier")
+st.write(f"📍 Site : Andal | État : Connecté au Cloud")
 
-# --- FORMULAIRE DE GESTION ---
+# --- INDICATEURS FINANCIERS (METRICS) ---
+if not df.empty:
+    # Conversion en nombres pour éviter les erreurs
+    df["Depenses"] = pd.to_numeric(df["Depenses"]).fillna(0)
+    df["Recettes"] = pd.to_numeric(df["Recettes"]).fillna(0)
+    df["Resultat"] = pd.to_numeric(df["Resultat"]).fillna(0)
+    
+    col1, col2, col3 = st.columns(3)
+    total_dep = df["Depenses"].sum()
+    total_rec = df["Recettes"].sum()
+    total_ben = df["Resultat"].sum()
+
+    col1.metric("Total Investi", f"{total_dep:,.0f} FCFA")
+    col2.metric("Ventes Totales", f"{total_rec:,.0f} FCFA")
+    col3.metric("Bénéfice Net", f"{total_ben:,.0f} FCFA", delta=f"{total_ben:,.0f}")
+
+st.divider()
+
+# --- FORMULAIRE DE SAISIE ---
 with st.sidebar:
-    st.header("📈 Nouvelle Entrée")
-    with st.form("compta_form"):
-        type_c = st.selectbox("Catégorie", ["Maraîchage", "Arboriculture", "Élevage"])
-        nom_c = st.text_input("Nom de l'activité")
-        surf = st.number_input("Grandeur (Ha/Têtes)", min_value=0.0)
-        depenses = st.number_input("Total Dépenses (FCFA)", min_value=0)
-        recettes = st.number_input("Ventes prévues/réelles (FCFA)", min_value=0)
+    st.header("📈 Nouveau Bilan")
+    with st.form("finance_form"):
+        cat = st.selectbox("Type", ["Maraîchage", "Arboriculture", "Élevage"])
+        nom = st.text_input("Culture/Espèce")
+        taille = st.number_input("Surface (Ha) / Têtes", min_value=0.0)
+        cout = st.number_input("Dépenses (Semences, Engrais, Main d'oeuvre)", min_value=0)
+        ventes = st.number_input("Ventes (Réelles ou Estimées)", min_value=0)
         
         submit = st.form_submit_button("Enregistrer le bilan")
 
-        if submit and nom_c:
-            profit = recettes - depenses
-            new_row = pd.DataFrame([{
+        if submit and nom:
+            profit = ventes - cout
+            new_entry = pd.DataFrame([{
                 "ID": len(df) + 1,
-                "Type": type_c,
-                "Culture": nom_c,
-                "Surface": surf,
+                "Type": cat,
+                "Culture": nom,
+                "Surface": taille,
                 "Date_Debut": datetime.now().strftime("%Y-%m-%d"),
-                "Statut": "En cours",
-                "Depenses": depenses,
-                "Recettes": recettes,
+                "Statut": "Récolté" if ventes > 0 else "En cours",
+                "Depenses": cout,
+                "Recettes": ventes,
                 "Resultat": profit
             }])
-            updated_df = pd.concat([df, new_row], ignore_index=True)
+            
+            # Mise à jour du Cloud
+            updated_df = pd.concat([df, new_entry], ignore_index=True)
             conn.update(worksheet="Campagnes", data=updated_df)
-            st.success(f"Bilan de {nom_c} synchronisé !")
+            st.success(f"Données pour {nom} synchronisées !")
             st.rerun()
 
-# --- TABLEAU DE BORD FINANCIER ---
-st.subheader("📊 Performance Financière à Andal")
+# --- VUES DÉTAILLÉES ---
+tab_complet, tab_maraichage, tab_elevage = st.tabs(["📊 Global", "🥔 Cultures", "🐓 Élevage"])
 
-if not df.empty:
-    # Calculs des totaux
-    total_dep = df["Depenses"].sum()
-    total_rec = df["Recettes"].sum()
-    total_prof = df["Resultat"].sum()
-
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Investi (FCFA)", f"{total_dep:,.0f}")
-    m2.metric("Chiffre d'Affaires (FCFA)", f"{total_rec:,.0f}")
-    m3.metric("Bénéfice Net (FCFA)", f"{total_prof:,.0f}", delta=f"{total_prof}")
-
-    st.divider()
+with tab_complet:
     st.dataframe(df, use_container_width=True, hide_index=True)
-else:
-    st.info("Enregistrez votre première campagne pour voir les statistiques.")
+
+with tab_maraichage:
+    df_m = df[df["Type"].isin(["Maraîchage", "Arboriculture"])]
+    st.table(df_m[["Culture", "Surface", "Depenses", "Recettes", "Resultat"]])
+
+with tab_elevage:
+    df_e = df[df["Type"] == "Élevage"]
+    st.table(df_e[["Culture", "Surface", "Depenses", "Recettes", "Resultat"]])
