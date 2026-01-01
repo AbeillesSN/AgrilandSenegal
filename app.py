@@ -3,70 +3,57 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime
 
-# Configuration de la page
-st.set_page_config(page_title="Agriland Sénégal - Gestion", layout="wide", page_icon="🚜")
+st.set_page_config(page_title="Agriland Sénégal", layout="wide", page_icon="🚜")
 
-st.title("🚜 Agriland Sénégal - Gestion de la Ferme")
-st.info("📍 Darou Khoudoss, Andal | Connexion Cloud Active")
-
-# --- CONNEXION AU GOOGLE SHEET ---
-# Utilise la configuration 'gsheets' définie dans vos Secrets Streamlit
+# --- CONNEXION CLOUD ---
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Lecture des données existantes dans l'onglet "Campagnes"
+# Lecture sécurisée des données
 try:
     df = conn.read(worksheet="Campagnes")
-except Exception:
-    # Si l'onglet est vide, on crée une structure de base
+except:
     df = pd.DataFrame(columns=["ID", "Type", "Culture", "Surface", "Date_Debut", "Statut"])
 
-# --- INTERFACE DE SAISIE (Barre latérale) ---
+st.title("🚜 Agriland Sénégal - Gestion de la Ferme")
+st.write(f"📍 Site : Andal, Darou Khoudoss | État : Connecté au Cloud")
+
+# --- INTERFACE DE SAISIE ---
 with st.sidebar:
-    st.header("➕ Nouvelle Campagne")
-    with st.form("form_ajout"):
-        type_c = st.selectbox("Catégorie", ["Maraîchage", "Arboriculture", "Grande Culture", "Élevage"])
-        nom_c = st.text_input("Nom de la culture (ex: Pomme de terre)")
-        surf = st.number_input("Surface (Ha) ou Effectif", min_value=0.0, step=0.1)
-        date_j = st.date_input("Date de début", datetime.now())
-        
-        submit = st.form_submit_button("Enregistrer sur Google Sheets")
+    st.header("📝 Enregistrer une activité")
+    with st.form("ajout_form"):
+        type_c = st.selectbox("Catégorie", ["Maraîchage", "Arboriculture", "Élevage"])
+        nom_c = st.text_input("Nom (ex: Pomme de terre, Poulets)")
+        valeur = st.number_input("Grandeur (Ha ou Nombre de têtes)", min_value=0.0)
+        date_j = st.date_input("Date de début")
+        submit = st.form_submit_button("Sauvegarder")
 
-        if submit:
-            if nom_c:
-                # Création de la nouvelle ligne
-                new_row = pd.DataFrame([{
-                    "ID": len(df) + 1,
-                    "Type": type_c,
-                    "Culture": nom_c,
-                    "Surface": surf,
-                    "Date_Debut": date_j.strftime("%Y-%m-%d"),
-                    "Statut": "En cours"
-                }])
-                
-                # Fusion avec les données existantes
-                updated_df = pd.concat([df, new_row], ignore_index=True)
-                
-                # Mise à jour du fichier Google Sheet
-                conn.update(worksheet="Campagnes", data=updated_df)
-                st.success(f"✅ {nom_c} enregistré avec succès !")
-                st.rerun() # Rafraîchit l'affichage
-            else:
-                st.error("Veuillez entrer un nom de culture.")
+        if submit and nom_c:
+            new_data = pd.DataFrame([{
+                "ID": len(df) + 1,
+                "Type": type_c,
+                "Culture": nom_c,
+                "Surface": valeur,
+                "Date_Debut": date_j.strftime("%Y-%m-%d"),
+                "Statut": "En cours"
+            }])
+            updated_df = pd.concat([df, new_data], ignore_index=True)
+            conn.update(worksheet="Campagnes", data=updated_df)
+            st.success("Synchronisation réussie !")
+            st.rerun()
 
-# --- AFFICHAGE DU TABLEAU DE BORD ---
-st.subheader("📋 Registre des activités à Andal")
+# --- AFFICHAGE PAR ONGLETS ---
+tab1, tab2, tab3 = st.tabs(["📋 Vue Générale", "🥔 Cultures", "🐓 Élevage"])
 
-if df.empty:
-    st.warning("Aucune donnée trouvée. Utilisez le formulaire à gauche pour commencer.")
-else:
-    # Affichage du tableau propre
+with tab1:
+    st.subheader("Registre complet de la ferme")
     st.dataframe(df, use_container_width=True, hide_index=True)
 
-    # Petit résumé statistique
-    st.divider()
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Total Campagnes", len(df))
-    if "Surface" in df.columns:
-        total_surf = pd.to_numeric(df["Surface"]).sum()
-        c2.metric("Surface totale (Ha)", f"{total_surf:.2f}")
-    c3.metric("Localisation", "Andal")
+with tab2:
+    st.subheader("Suivi Maraîchage & Arbres")
+    df_cult = df[df['Type'].isin(["Maraîchage", "Arboriculture"])]
+    st.table(df_cult)
+
+with tab3:
+    st.subheader("Suivi de l'Élevage")
+    df_elev = df[df['Type'] == "Élevage"]
+    st.table(df_elev)
